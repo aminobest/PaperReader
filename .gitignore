@@ -1,0 +1,11 @@
+.venv/
+.env
+data/
+.tmp/
+__pycache__/
+*.pyc
+tests/system/node_modules/
+tests/system/test-results/
+tests/system/playwright-report/
+.pytest_cache/
+.ruff_cache/

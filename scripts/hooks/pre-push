@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# CR-01 — pre-push: the full gate including system tests (real LLM, small fixture).
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+scripts/ci.sh

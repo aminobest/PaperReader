@@ -1,0 +1,10 @@
+{
+  "name": "paperreader-system-tests",
+  "private": true,
+  "description": "CR-01 — system tests: Playwright against a fresh server with the REAL LLM (2-page fixture).",
+  "scripts": { "test": "playwright test" },
+  "devDependencies": {
+    "@playwright/test": "1.49.1",
+    "pdfjs-dist": "4.10.38"
+  }
+}

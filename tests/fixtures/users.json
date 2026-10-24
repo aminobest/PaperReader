@@ -1,0 +1,20 @@
+{
+ "users": [
+  {
+   "id": "testadmin01",
+   "username": "test",
+   "password_hash": "pbkdf2_sha256$310000$KbwGxPDD_rTjQmRG6dnknw$pXpyDI_u8PAPwSJGTLPURGiVmmBCuC5mUPyAjDlzCAU",
+   "role": "admin",
+   "active": true,
+   "created_at": "2026-10-24T00:00:00+00:00"
+  },
+  {
+   "id": "testuser02",
+   "username": "reader",
+   "password_hash": "pbkdf2_sha256$310000$I0EyQKhywp51fWpYS8U6iQ$fVK01_5G7wN2v0jLFoQoLw03rsitE-VQ_A2OXSTB8ss",
+   "role": "user",
+   "active": true,
+   "created_at": "2026-10-24T00:00:00+00:00"
+  }
+ ]
+}

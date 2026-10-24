@@ -1,0 +1,10 @@
+# CR-01 — lint rules gated in CI (start narrow & false-positive free; widen as the code earns it)
+line-length = 120
+exclude = ["tests/system/node_modules", ".venv", ".tmp"]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B006", "B008"]
+ignore = []
+
+[lint.per-file-ignores]
+"backend/app/api/*.py" = ["B008"]  # FastAPI Depends()/File() defaults are idiomatic

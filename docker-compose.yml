@@ -1,0 +1,13 @@
+# CR-02 — published on localhost only; Tailscale Serve exposes it to the tailnet over HTTPS.
+services:
+  paperreader:
+    build: .
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      COOKIE_SECURE: "1"
+    ports:
+      - "127.0.0.1:7400:8000"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

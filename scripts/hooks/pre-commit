@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# CR-01 — pre-commit: fast gate + "code change needs a logbook entry".
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+.venv/bin/python scripts/check_traceability.py --staged
+scripts/ci.sh --fast
