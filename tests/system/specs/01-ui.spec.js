@@ -99,6 +99,7 @@ test.describe('workspace without AI', () => {
       await parent.click();
       await page.click('[data-a=child]');
       await page.fill('.modal input[name=title]', title);
+      await page.uncheck('.modal input[name=ground]'); // no AI in this spec (AT-06.7 opt-out)
       await page.click('.modal button[type=submit]');
       await expect(page.locator('.mm-node', { hasText: title })).toBeVisible();
     };
@@ -108,6 +109,7 @@ test.describe('workspace without AI', () => {
     await page.locator('.mm-node', { hasText: 'Leaf' }).click();
     await page.click('[data-a=edit]');
     await page.fill('.node-form input[name=title]', 'Leaf edited');
+    await page.uncheck('.node-form input[name=reground]');
     await page.selectOption('.node-form select[name=parent_id]', { label: 'My map › Other' });
     await page.click('.node-form button.primary');
     await expect(page.locator('.mm-node', { hasText: 'Leaf edited' })).toBeVisible();
@@ -162,7 +164,7 @@ test.describe('devices', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page);
     for (const sel of ['.pane-map', '.pane-paper', '.pane-side']) await expect(page.locator(sel)).toBeInViewport();
-    await expect(page.locator('.split[data-split=a]')).toBeVisible();
+    await expect(page.locator('.split[data-split=sa]')).toBeVisible();
     await expect(page.locator('.ws-tabs')).toBeHidden();
   });
 

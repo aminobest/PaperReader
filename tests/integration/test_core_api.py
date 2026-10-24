@@ -104,7 +104,7 @@ def test_rename_and_delete_paper(api):
     assert client.patch(f"/api/papers/{pid}", json={"title": "New"}).json()["title"] == "New"
     client.post(f"/api/papers/{pid}/annotations", json={"page": 1, "rects": [[0.1, 0.1, 0.2, 0.2]], "color": "yellow"})
     m = client.post(f"/api/sessions/{sid}/maps", json={"paper_ids": [pid], "generate": False, "title": "M"}).json()["map"]
-    root = client.get(f"/api/maps/{m['id']}").json()["nodes"][0]
+    root = client.get(f"/api/maps/{m['id']}").json()["nodes"][0]  # manual map: no AI job started
     client.post(f"/api/nodes/{root['id']}/quotes", json={"paper_id": pid, "text": "The gate is a sigmoid unit computed from the current query"})
     assert client.delete(f"/api/papers/{pid}").status_code == 204
     assert not (data / "papers" / f"{pid}.pdf").exists()
@@ -131,3 +131,14 @@ def test_health_and_localhost_binding(env):
     compose = (ROOT / "docker-compose.yml").read_text()
     ports = [line.strip() for line in compose.splitlines() if line.strip().startswith('- "') and ":" in line]
     assert ports and all(p.startswith('- "127.0.0.1:') for p in ports), ports
+
+
+def test_title_from_heading_when_metadata_missing(api):
+    """AT-03.5 — a PDF without metadata title (like arXiv's) is named after its page-1 heading."""
+    import fitz
+    doc = fitz.open(stream=PDF, filetype="pdf")
+    doc.set_metadata({})
+    client, _, _ = api
+    sid = client.post("/api/sessions", json={"name": "S"}).json()["id"]
+    p = client.post(f"/api/sessions/{sid}/papers", files=[("files", ("2401.00001.pdf", doc.tobytes(), "application/pdf"))]).json()[0]
+    assert p["title"] == "Gated Memory Networks for Short Text Classification"

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+
 from app.application.grounding_service import Candidate, ground, llm_fixer
 from app.application.settings import effective_settings, prompt
 from app.domain.grounding import PageIndex, PaperIndex, Word
-from app.domain.mindmap import MapFormatError, fold_flags, RawNode, extract_json, parse_children, parse_map, parse_quotes
+from app.domain.mindmap import (MapFormatError, RawNode, depth_of, extract_json, fold_flags, merge_deeper,
+                                parse_children, parse_map, parse_quotes)
 from app.domain.prompts import render
 from app.domain.rules import node_path, papers_block
 from app.domain.ids import now
+
+
+log = logging.getLogger("paperreader.maps")
 
 
 def load_papers(repo, paper_ids: list[str]) -> list[PaperIndex]:
@@ -72,13 +78,22 @@ async def generate_map(repo, gateway, map_id: str) -> dict:
     user = render(prompt(repo, "map_generate"), papers=papers_block(papers))
     raw, conv = await ask_json(gateway, repo, "map_generate", [gateway.system_message(),
                                                                {"role": "user", "content": user}], parse_map)
+    depth, min_depth = depth_of(raw.nodes), effective_settings(repo, gateway.default_model)["min_map_depth"]
+    if depth < min_depth:  # AT-05.5: one request to reach the details; never fatal
+        ask = {"role": "user", "content": render(prompt(repo, "map_deepen"), depth=str(depth), min_depth=str(min_depth))}
+        try:
+            reply = await gateway.ask("map_deepen", conv + [ask])
+            raw.nodes += merge_deeper(raw, reply)
+            conv = conv + [ask, {"role": "assistant", "content": reply}]
+        except Exception:  # noqa: BLE001 — the map is still useful without the extra depth
+            log.warning("map %s: deepening failed", map_id, exc_info=True)
     result = await _ground_nodes(repo, gateway, raw.nodes, papers, conv)
     ids = _persist_nodes(repo, map_id, raw.nodes, result, None)
     for link in raw.links:
         repo.insert("links", map_id=map_id, source_id=ids[link.source], target_id=ids[link.target], label=link.label)
     if len(raw.nodes) > 12:
         fold(repo, map_id, 2)  # open on the big picture; the reader drills down
-    report = {"nodes": len(raw.nodes), "links": len(raw.links), **result.report()}
+    report = {"nodes": len(raw.nodes), "links": len(raw.links), "depth": depth_of(raw.nodes), **result.report()}
     repo.update("maps", map_id, title=m["title"] or raw.title, status="ready", error=None, report=report,
                 updated_at=now())
     return report

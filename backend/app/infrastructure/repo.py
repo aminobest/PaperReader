@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS notes (
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, session_id TEXT, kind TEXT NOT NULL, target_id TEXT,
   status TEXT NOT NULL, report TEXT, error TEXT, created_at TEXT, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS user_prefs (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, key TEXT NOT NULL, value TEXT NOT NULL,
+  updated_at TEXT, PRIMARY KEY (user_id, key));
 CREATE TABLE IF NOT EXISTS ai_logs (
   id TEXT PRIMARY KEY, ts TEXT, kind TEXT, model TEXT, messages TEXT, response TEXT,
   duration_ms INTEGER, error TEXT);
@@ -199,6 +202,19 @@ class Repo:
                 c.execute("INSERT OR REPLACE INTO prompts (key, template, updated_at) VALUES (?,?,?)",
                           (key, template, now()))
 
+    # ---- US-13 user preferences ---------------------------------------------
+    def prefs(self, user_id: str) -> dict:
+        return {r["key"]: json.loads(r["value"]) for r in self.query("SELECT key, value FROM user_prefs WHERE user_id=?",
+                                                                     (user_id,))}
+
+    def set_pref(self, user_id: str, key: str, value) -> None:
+        with self.tx() as c:
+            if value is None:
+                c.execute("DELETE FROM user_prefs WHERE user_id=? AND key=?", (user_id, key))
+            else:
+                c.execute("INSERT OR REPLACE INTO user_prefs (user_id, key, value, updated_at) VALUES (?,?,?,?)",
+                          (user_id, key, json.dumps(value), now()))
+
     # ---- papers ------------------------------------------------------------
     def save_pages(self, paper_id: str, pages: list[dict]) -> None:
         with self.tx() as c:
@@ -216,7 +232,8 @@ class Repo:
         m["nodes"] = self.query("SELECT * FROM nodes WHERE map_id=? ORDER BY position, created_at", (map_id,))
         m["links"] = self.query("SELECT * FROM links WHERE map_id=?", (map_id,))
         m["quotes"] = self.query(
-            "SELECT q.* FROM quotes q JOIN nodes n ON n.id=q.node_id WHERE n.map_id=? ORDER BY q.page", (map_id,))
+            "SELECT q.id, q.origin, q.node_id, q.message_id, q.paper_id, q.page, q.text, q.rects, q.created_at "
+            "FROM quotes q JOIN nodes n ON n.id=q.node_id WHERE n.map_id=? ORDER BY q.page", (map_id,))
         return m
 
     def next_position(self, map_id: str, parent_id: str | None) -> int:
@@ -226,9 +243,11 @@ class Repo:
 
     def add_quotes(self, located: list, *, origin: str, node_id: str | None = None,
                    message_id: str | None = None) -> list[dict]:
-        return [self.insert("quotes", origin=origin, node_id=node_id, message_id=message_id,
+        rows = [self.insert("quotes", origin=origin, node_id=node_id, message_id=message_id,
                             paper_id=loc.paper_id, page=loc.page, text=loc.text, rects=loc.rects,
                             created_at=now()) for loc in located]
+        return [{k: row[k] for k in ("id", "origin", "node_id", "message_id", "paper_id", "page", "text", "rects", "created_at")}
+                for row in rows]
 
     def delete_node_quotes(self, node_id: str, origin: str = "map") -> None:
         with self.tx() as c:

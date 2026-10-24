@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import admin, auth, maps, sessions, workspace
+from app.api import admin, auth, maps, prefs, sessions, workspace
 from app.application.jobs import JobRunner
 from app.application.llm_gateway import LLMGateway
 from app.infrastructure.config import Config, load_config
@@ -43,7 +43,7 @@ def create_app(config: Config | None = None, llm_client=None) -> FastAPI:
     app.state.gateway = LLMGateway(repo, client, config.default_model)
     app.state.jobs = jobs
 
-    for r in (auth.router, sessions.router, maps.router, workspace.router, admin.router):
+    for r in (auth.router, sessions.router, maps.router, workspace.router, admin.router, prefs.router):
         app.include_router(r)
 
     @app.get("/api/health")

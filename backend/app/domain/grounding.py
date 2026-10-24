@@ -1,4 +1,4 @@
-"""US-04 — quote grounding assertion: verify a quote exists verbatim in a paper and locate it.
+"""US-04/US-14 — verify a contextual evidence passage verbatim in a paper and locate it.
 
 Matching is done on a normalised character stream (NFKC, lower-case, alphanumerics only) so that
 whitespace, punctuation, line-break hyphenation ("repre-\\nsentation") and ligatures ("ﬁ") never
@@ -9,9 +9,6 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass, field
-
-MIN_QUOTE_CHARS = 20  # US-04 AT-04.2: shorter quotes match too easily to be evidence
-
 
 def normalize(text: str) -> str:
     text = unicodedata.normalize("NFKC", text).lower()
@@ -75,8 +72,8 @@ def check_shape(quote: str) -> str:
     if "..." in quote or "…" in quote:
         raise QuoteError("contains an ellipsis; quotes must be one contiguous passage")
     norm = normalize(quote)
-    if len(norm) < MIN_QUOTE_CHARS:
-        raise QuoteError(f"too short (min {MIN_QUOTE_CHARS} letters/digits)")
+    if not norm:
+        raise QuoteError("empty quote")
     return norm
 
 

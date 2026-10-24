@@ -7,6 +7,6 @@ module.exports = defineConfig({
   timeout: 6 * 60 * 1000,
   expect: { timeout: 15000 },
   reporter: [['list']],
-  use: { baseURL: 'http://127.0.0.1:7420', trace: 'retain-on-failure' },
+  use: { baseURL: 'http://127.0.0.1:7420', trace: 'retain-on-failure', actionTimeout: 30000 },
   webServer: { command: './start-server.sh', url: 'http://127.0.0.1:7420/api/health', reuseExistingServer: false, timeout: 60000 },
 });

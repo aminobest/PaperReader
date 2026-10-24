@@ -74,3 +74,57 @@ test('AT-10.2 linked citations render as clickable chips; HTML is escaped', () =
   assert.ok(html.includes('<button class="cite" data-quote="abc123">1</button>'));
   assert.ok(html.includes('&lt;b&gt;') && html.includes('<strong>Gate</strong>') && html.includes('<li>item</li>'));
 });
+
+// ---- US-13 layout model ----------------------------------------------------------------------------
+import { defaultLayout, dragSplitter, gridFor, resetSplitter, sanitizeLayout } from '../../../frontend/js/layout.mjs';
+
+test('AT-13.5 defaults per device class; invalid stored values fall back', () => {
+  assert.equal(defaultLayout('desktop').side, 'right');
+  assert.equal(defaultLayout('tablet').side, 'drawer');
+  assert.deepEqual(sanitizeLayout('garbage', 'desktop'), defaultLayout('desktop'));
+  const s = sanitizeLayout({ side: 'top', swap: 'yes', share: 7, sideW: -5, sideH: NaN }, 'desktop');
+  assert.deepEqual(s, { side: 'right', swap: false, share: 0.85, sideW: 240, sideH: 300 });
+});
+
+test('AT-13.2 side panel right / left / bottom (footer) / drawer grids', () => {
+  const p = defaultLayout('desktop');
+  assert.equal(gridFor(p).areas, '"map sa paper sb side"');
+  assert.equal(gridFor({ ...p, side: 'left' }).areas, '"side sb map sa paper"');
+  const bottom = gridFor({ ...p, side: 'bottom', sideH: 250 });
+  assert.equal(bottom.areas, '"map sa paper" "sb sb sb" "side side side"');
+  assert.ok(bottom.rows.endsWith('250px'));
+  assert.ok(!gridFor({ ...p, side: 'drawer' }).areas.includes('side'));
+});
+
+test('AT-13.3 swap puts the paper first and keeps each pane its own share', () => {
+  const g = gridFor({ ...defaultLayout('desktop'), swap: true, share: 0.3 });
+  assert.equal(g.areas, '"paper sa map sb side"');
+  assert.ok(g.columns.startsWith('minmax(0, 0.7fr)'));
+});
+
+test('AT-13.1 dragging dividers updates share / side size within limits', () => {
+  const p = defaultLayout('desktop');
+  const panes = { left: 0, width: 1000 };
+  const main = { left: 0, right: 1400, top: 0, bottom: 900, width: 1400, height: 900 };
+  assert.equal(dragSplitter(p, 'sa', { x: 300, y: 0 }, panes, main).share, 0.3);
+  assert.equal(dragSplitter({ ...p, swap: true }, 'sa', { x: 300, y: 0 }, panes, main).share, 0.7);
+  assert.equal(dragSplitter(p, 'sa', { x: 5, y: 0 }, panes, main).share, 0.15);
+  assert.equal(dragSplitter(p, 'sb', { x: 1000, y: 0 }, panes, main).sideW, 400);
+  assert.equal(dragSplitter({ ...p, side: 'left' }, 'sb', { x: 500, y: 0 }, panes, main).sideW, 500);
+  assert.equal(dragSplitter({ ...p, side: 'bottom' }, 'sb', { x: 0, y: 600 }, panes, main).sideH, 300);
+});
+
+test('AT-13.4 double-click reset only touches the divider it belongs to', () => {
+  const p = { ...defaultLayout('desktop'), share: 0.3, sideW: 500, side: 'left' };
+  assert.deepEqual(resetSplitter(p, 'sa', 'desktop'), { ...p, share: 0.5 });
+  assert.deepEqual(resetSplitter(p, 'sb', 'desktop'), { ...p, sideW: 360, sideH: 300 });
+});
+
+import { foldFlags } from '../../../frontend/js/layout.mjs';
+
+test('AT-06.5 client fold rule mirrors the server (instant depth change)', () => {
+  const ns = [{ id: 'r', parent_id: null, position: 0 }, { id: 'a', parent_id: 'r', position: 0 },
+    { id: 'b', parent_id: 'a', position: 0 }, { id: 'c', parent_id: 'b', position: 0 }];
+  assert.deepEqual(Object.fromEntries(foldFlags(ns, 1)), { r: false, a: true, b: true, c: false });
+  assert.ok(![...foldFlags(ns, null).values()].some(Boolean));
+});

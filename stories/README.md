@@ -16,7 +16,10 @@ Status: ✅ shipped · 🔄 in progress · 🔲 planned
 | [US-10](US-10-node-chat/story.md) | Chat about nodes or passages | ✅ |
 | [US-11](US-11-admin/story.md) | Admin: model, prompts, log | ✅ |
 | [US-12](US-12-cross-device-ux/story.md) | Great UX on Mac, iPad, iPhone | ✅ |
+| [US-13](US-13-custom-layout/story.md) | Resizable, rearrangeable workspace | ✅ |
+| [US-14](US-14-contextual-evidence/story.md) | Contextual evidence | ✅ |
 | [CR-01](CR-01-ci-gate/story.md) | Token-free CI gate | ✅ |
 | [CR-02](CR-02-deployment/story.md) | Docker + Tailscale deployment | ✅ |
+| [CR-03](CR-03-real-paper-journey/story.md) | Real-paper journey test | ✅ |
 
 New work: copy `_template/`, take the next free ID, never reuse IDs. See `.github/skills/paperreader-dev/SKILL.md`.

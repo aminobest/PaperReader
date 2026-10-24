@@ -15,6 +15,7 @@ DEFAULT_SETTINGS = {
     "model": MODEL_PRESETS[0],
     "temperature": 0.3,
     "grounding_retries": 2,
+    "min_map_depth": 3,  # US-05 AT-05.5: levels below the centre a generated map must reach (0 = off)
     "chat_color": "#a855f7",  # US-10: the one AI-trace color for chat evidence
     "map_color": "#f97316",   # US-07: highlight color for the selected node's quotes
 }
@@ -45,6 +46,11 @@ def validate_settings(values: dict) -> dict:
         if not 0 <= r <= 5:
             raise ValueError("grounding_retries must be within 0..5")
         out["grounding_retries"] = r
+    if "min_map_depth" in values:
+        d = int(values["min_map_depth"])
+        if not 0 <= d <= 6:
+            raise ValueError("min_map_depth must be within 0..6")
+        out["min_map_depth"] = d
     for key in ("chat_color", "map_color"):
         if key in values:
             v = str(values[key])

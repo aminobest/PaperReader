@@ -67,3 +67,14 @@ def test_fold_flags_show_exactly_n_levels():
     assert fold_flags(nodes, 1) == {"r": False, "a": True, "b": True, "c": False}
     assert fold_flags(nodes, 2) == {"r": False, "a": False, "b": True, "c": False}
     assert not any(fold_flags(nodes, None).values())
+
+
+def test_depth_and_merge_of_deeper_nodes():
+    """AT-05.5 — depth counts levels below the root; deeper nodes merge under existing or new parents."""
+    from app.domain.mindmap import depth_of, merge_deeper
+    m = parse_map('{"nodes": [{"id":"n1","parent":null,"title":"Root"},{"id":"n2","parent":"n1","title":"Branch"}]}')
+    assert depth_of(m.nodes) == 1
+    added = merge_deeper(m, '{"nodes": [{"id":"x2","parent":"x1","title":"Leaf"},{"id":"x1","parent":"n2","title":"Mid"},'
+                            '{"id":"n2","parent":"n1","title":"Clash"},{"id":"zz","parent":"nowhere","title":"Orphan"}]}')
+    assert [(n.title, n.parent) for n in added] == [("Mid", "n2"), ("Clash", "n1"), ("Leaf", "x1")]
+    assert depth_of(m.nodes + added) == 3

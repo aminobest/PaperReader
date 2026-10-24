@@ -16,6 +16,7 @@ export async function renderAdmin(root, me) {
       <datalist id="presets">${settings.presets.map((p) => `<option value="${esc(p)}">`).join('')}</datalist>
       <label>Temperature<input name="temperature" type="number" min="0" max="2" step="0.1" value="${v.temperature}"></label>
       <label>Grounding retries<input name="grounding_retries" type="number" min="0" max="5" value="${v.grounding_retries}"></label>
+      <label>Minimum map depth (0 = off)<input name="min_map_depth" type="number" min="0" max="6" value="${v.min_map_depth}"></label>
       <label>AI-chat trace color<input name="chat_color" type="color" value="${v.chat_color}"></label>
       <label>Map-quote color<input name="map_color" type="color" value="${v.map_color}"></label>
       <div><button class="btn primary">Save settings</button></div></form>
@@ -35,7 +36,7 @@ export async function renderAdmin(root, me) {
     e.preventDefault();
     const f = e.target.elements;
     try {
-      await api('/admin/settings', { method: 'PUT', body: { model: f.model.value, temperature: Number(f.temperature.value), grounding_retries: Number(f.grounding_retries.value), chat_color: f.chat_color.value, map_color: f.map_color.value } });
+      await api('/admin/settings', { method: 'PUT', body: { model: f.model.value, temperature: Number(f.temperature.value), grounding_retries: Number(f.grounding_retries.value), min_map_depth: Number(f.min_map_depth.value), chat_color: f.chat_color.value, map_color: f.map_color.value } });
       toast('Settings saved', 'ok');
     } catch (err) { errorToast(err); }
   };

@@ -29,4 +29,21 @@ def extract(data: bytes) -> dict:
                 ])
             pages.append({"page": pno, "words": words})
         meta_title = (doc.metadata or {}).get("title")
-    return {"meta_title": meta_title, "pages": pages}
+        heading = _first_page_heading(doc[0]) if doc.page_count else ""
+    return {"meta_title": meta_title, "heading": heading, "pages": pages}
+
+
+def _first_page_heading(page) -> str:
+    """US-03 AT-03.5 — text set in the largest font on the top half of page 1 (the visible title)."""
+    spans = []
+    for block in page.get_text("dict").get("blocks", []):
+        for line in block.get("lines", []):
+            if abs(line.get("dir", (1, 0))[1]) > 0.01:  # skip rotated text (e.g. the arXiv margin stamp)
+                continue
+            for s in line.get("spans", []):
+                if s["text"].strip() and s["bbox"][1] < page.rect.height / 2:
+                    spans.append((round(s["size"], 1), s["text"].strip()))
+    if not spans:
+        return ""
+    biggest = max(size for size, _ in spans)
+    return " ".join(t for size, t in spans if size == biggest)[:200]

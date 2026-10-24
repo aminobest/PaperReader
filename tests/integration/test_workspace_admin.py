@@ -146,3 +146,25 @@ def test_ai_calls_are_logged(api):
     assert logs[0]["duration_ms"] >= 0
     assert client.delete("/api/admin/logs").status_code == 204
     assert client.get("/api/admin/logs").json() == []
+
+
+def test_delete_chat_message_removes_answer_and_evidence(api):
+    """AT-10.5 — deleting a question also deletes its answer; the answer's quotes disappear."""
+    client, llm, _ = api
+    sid, _, mid, _ = generated_map(client, llm)
+    chat = client.post(f"/api/sessions/{sid}/chats", json={"map_id": mid}).json()
+    for q in ("first?", "second?"):
+        llm.replies.append(json.dumps({"answer": "See [1].", "quotes": [{"n": 1, "paper": "P1", "page": 2,
+                                                                          "text": Q_GATE}]}))
+        wait_job(client, client.post(f"/api/chats/{chat['id']}/messages", json={"content": q}).json()["id"])
+    msgs = client.get(f"/api/chats/{chat['id']}").json()["messages"]
+    assert [m["role"] for m in msgs] == ["user", "assistant", "user", "assistant"]
+    assert len(client.get(f"/api/sessions/{sid}/quotes").json()) == 2
+    assert client.delete(f"/api/messages/{msgs[0]['id']}").status_code == 204
+    left = client.get(f"/api/chats/{chat['id']}").json()["messages"]
+    assert [m["content"] for m in left if m["role"] == "user"] == ["second?"] and len(left) == 2
+    assert len(client.get(f"/api/sessions/{sid}/quotes").json()) == 1
+    assert client.delete(f"/api/messages/{left[1]['id']}").status_code == 204
+    assert client.get(f"/api/sessions/{sid}/quotes").json() == []
+    login(client, "reader", "reader123456")
+    assert client.delete(f"/api/messages/{left[0]['id']}").status_code == 404

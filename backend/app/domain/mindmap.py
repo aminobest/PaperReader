@@ -1,4 +1,4 @@
-"""US-05/US-06 — mind-map structure: parse LLM output into a validated tree; tree invariants."""
+"""US-05/US-06/US-14 — parse mind maps and their explanatory, traceable evidence."""
 
 from __future__ import annotations
 
@@ -76,7 +76,11 @@ def parse_quotes(items, default_paper: str) -> list[RawQuote]:
             page = int(page) if page is not None else None
         except (TypeError, ValueError):
             page = None
-        out.append(RawQuote(paper=str(q.get("paper") or default_paper), page=page, text=str(q["text"]).strip()))
+        out.append(RawQuote(
+            paper=str(q.get("paper") or default_paper),
+            page=page,
+            text=q["text"].strip(),
+        ))
     return out
 
 
@@ -193,3 +197,49 @@ def fold_flags(nodes: list[dict], depth: int | None) -> dict[str, bool]:
         out[nid] = depth is not None and d >= depth and bool(kids.get(nid))
         stack.extend((c, d + 1) for c in kids.get(nid, []))
     return out
+
+
+def meaning_changed(before: dict, changes: dict) -> bool:
+    """AT-06.7 — a node's evidence must be re-derived when what it says changes (title/explanation)."""
+    norm = lambda v: " ".join(str(v or "").split()).lower()  # noqa: E731
+    return any(k in changes and norm(changes[k]) != norm(before.get(k)) for k in ("title", "explanation"))
+
+
+def depth_of(nodes: list[RawNode]) -> int:
+    """AT-05.5 — number of levels below the root (root alone = 0)."""
+    parent = {n.ref: n.parent for n in nodes}
+    best = 0
+    for n in nodes:
+        d, cur = 0, n.parent
+        while cur is not None and d <= len(nodes):
+            d, cur = d + 1, parent.get(cur)
+        best = max(best, d)
+    return best
+
+
+def merge_deeper(raw: RawMap, reply: str, default_paper: str = "P1") -> list[RawNode]:
+    """AT-05.5 — new nodes from a "deepen" reply; each must hang under an existing or new node. Parent-first."""
+    data = extract_json(reply)
+    known = {n.ref for n in raw.nodes}
+    items = [n for n in (data.get("nodes") or []) if isinstance(n, dict)]
+    for i, n in enumerate(items):  # never let a new node overwrite an existing id
+        if str(n.get("id")) in known:
+            n["id"] = f"d{i}_{n.get('id')}"
+    new_refs = {str(n.get("id")) for n in items}
+    added: list[RawNode] = []
+    pending = items
+    while pending:
+        progressed, rest = False, []
+        for n in pending:
+            parent = str(n.get("parent"))
+            if parent in known:
+                nodes = parse_nodes([{**n, "parent": parent}], default_paper, root_parent=parent)
+                added.extend(nodes)
+                known.add(nodes[0].ref)
+                progressed = True
+            elif parent in new_refs:
+                rest.append(n)
+        if not progressed:
+            break
+        pending = rest
+    return added

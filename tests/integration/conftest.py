@@ -15,7 +15,8 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 PDF = (FIXTURES / "tiny_paper.pdf").read_bytes()
 Q_ABSTRACT = "Short texts such as tweets and search queries carry little context, which makes them hard to classify."
 Q_GATE = "The gate is a sigmoid unit computed from the current query and the memory summary."
-Q_RESULT = "GMN reaches 88.4 percent accuracy on the TREC question dataset"
+Q_RESULT = ("GMN reaches 88.4 percent accuracy on the TREC question dataset, compared with 86.1 percent "
+           "for the best recurrent baseline.")
 
 
 class ScriptedLLM:
@@ -58,6 +59,7 @@ def env(tmp_path):
     cfg = Config(data_dir=str(tmp_path), openrouter_api_key="", openrouter_base_url="http://unused",
                  default_model="test/model", cookie_secure=False, llm_timeout=5)
     app = create_app(cfg, llm_client=llm)
+    app.state.repo.set_settings({"min_map_depth": 0})  # fixture maps are shallow; AT-05.5 tests opt back in
     with TestClient(app) as client:
         yield client, llm, tmp_path
 

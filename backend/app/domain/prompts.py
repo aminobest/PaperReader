@@ -1,4 +1,4 @@
-"""US-11 — default AI prompt templates (editable in Admin; stored in the DB) and their rendering.
+"""US-11/US-14 — editable AI prompt defaults and contextual, explanatory evidence requirements.
 
 Placeholders use `{{name}}`. REQUIRED lists the placeholders a template must keep so the app can
 inject its data (AT-11.3).
@@ -8,11 +8,24 @@ from __future__ import annotations
 
 import re
 
-_QUOTE_RULES = """QUOTE RULES (strict, they are machine-verified):
-- Every quote must be copied VERBATIM from the paper text above: same words, same order.
-- One contiguous passage from ONE page, 8 to 40 words. No ellipsis, no paraphrase, no merging of passages.
-- Give the paper label and the page number from the [P<n> p.<page>] markers.
-- Prefer the sentence that best proves the point; 1-3 quotes per node."""
+_QUOTE_RULES = """EVIDENCE IS FOR UNDERSTANDING, NOT KEYWORD MATCHING (US-14):
+- First identify the exact claim in the node/answer that needs evidence. Select a passage that directly
+  explains or demonstrates that claim, not merely one that mentions the same topic or terminology.
+- Each passage must be useful to a newcomer on its own: include the subject/referent and the complete
+  thought that explains the claim, its mechanism, result, reason, or limitation. Keep essential context.
+- Quote one contiguous passage from ONE page. Use complete sentence(s) or a whole explanatory thought;
+  include enough context to make the subject, mechanism, result, or limitation understandable. Do not
+  quote a clause fragment, isolated definition, or number. Choose the passage length that best explains
+  this point; there is no word-count target. No ellipses, paraphrase, or merged passages.
+- Choose the number of distinct passages needed to explain and support the paper's substantive claims;
+  there is no fixed target or maximum. One passage may support related claims. Include additional passages
+  when they add necessary evidence or context, and avoid redundant repetitions.
+- If a node has distinct claims, choose a passage for each important claim; do not reuse the same evidence
+  across sibling nodes unless it genuinely supports each node's different point.
+- If the paper does not directly support a node/claim, return no quote for it. Never invent, infer, or
+  force weak evidence to fill a quota.
+- `text` is the sole verbatim citation: copy it exactly from one page of the paper text above, including
+  words in the same order. Give its paper label and page number from the [P<n> p.<page>] markers."""
 
 DEFAULTS: dict[str, dict] = {
     "system": {
@@ -52,6 +65,18 @@ DEFAULTS: dict[str, dict] = {
             "PAPERS\n{{papers}}"
         ),
     },
+    "map_deepen": {
+        "name": "Deepen a shallow map",
+        "description": "Sent once when the generated map has fewer levels than required.",
+        "template": (
+            "The mind map you returned only goes {{depth}} level(s) below the central node; I need at least "
+            "{{min_depth}} so that it reaches the tiny details (mechanisms, definitions, numbers, examples). "
+            "Add deeper child nodes under the existing nodes (use their ids as parent). Follow the same "
+            "principles and QUOTE RULES as before. Reply with JSON only: {\"nodes\": [{\"id\": \"x1\", "
+            "\"parent\": \"<existing or new id>\", \"title\": str, \"explanation\": str, \"kind\": str, "
+            "\"quotes\": [{\"paper\": \"P1\", \"page\": int, \"text\": str}]}]}"
+        ),
+    },
     "node_expand": {
         "name": "Expand node deeper",
         "description": "Adds more detailed child nodes under one node.",
@@ -71,7 +96,8 @@ DEFAULTS: dict[str, dict] = {
         "template": (
             "Find the passages of the paper(s) below that best support or explain this mind-map node.\n\n"
             "NODE PATH: {{node_path}}\nNODE: {{node}}\n\n" + _QUOTE_RULES + "\n\n"
-            "Reply with JSON only: {\"quotes\": [{\"paper\": \"P1\", \"page\": int, \"text\": str}]}\n\n"
+            "Reply with JSON only: {\"quotes\": [{\"paper\": \"P1\", \"page\": int, "
+            "\"text\": str}]}\n\n"
             "PAPERS\n{{papers}}"
         ),
     },
@@ -81,8 +107,9 @@ DEFAULTS: dict[str, dict] = {
         "template": (
             "Help me understand the following part of the paper(s). Explain simply, build intuition, "
             "define jargon, and relate it to the big picture.\n\nFOCUS\n{{context}}\n\n"
-            "Ground your answer in the paper: cite evidence with markers [1], [2] … in the text and list "
-            "the quotes.\n" + _QUOTE_RULES + "\n\n"
+            "Ground each important factual claim in the answer in the paper. Put a [n] marker immediately "
+            "after the sentence/claim it supports; do not attach one citation to a whole paragraph of "
+            "different claims. Keep each passage tied to that claim.\n" + _QUOTE_RULES + "\n\n"
             "Reply with JSON only: {\"answer\": \"markdown with [n] markers\", \"quotes\": [{\"n\": 1, "
             "\"paper\": \"P1\", \"page\": int, \"text\": str}]}\n\nPAPERS\n{{papers}}"
         ),
@@ -92,9 +119,11 @@ DEFAULTS: dict[str, dict] = {
         "description": "Sent back when quotes were not found verbatim in the paper.",
         "template": (
             "These quotes were NOT found verbatim in the paper text, so they were rejected:\n{{failures}}\n\n"
-            "For each ref, copy the correct passage EXACTLY from the paper text (8-40 words, one page, no "
-            "ellipsis), or null if none exists. Reply with JSON only: "
-            "{\"fixes\": [{\"ref\": str, \"paper\": \"P1\", \"page\": int, \"text\": str | null}]}"
+            "For each ref, find a contextual passage that follows the EVIDENCE rules already given, "
+            "is copied EXACTLY from one page, and directly supports the original node/claim. Do NOT "
+            "shorten a passage to a fragment to make it match. If no suitable passage exists, return "
+            "null for text. Reply with JSON only: {\"fixes\": [{\"ref\": str, \"paper\": \"P1\", "
+            "\"page\": int, \"text\": str | null}]}"
         ),
     },
     "json_fix": {
@@ -107,6 +136,7 @@ DEFAULTS: dict[str, dict] = {
 REQUIRED: dict[str, tuple[str, ...]] = {
     "system": (),
     "map_generate": ("papers",),
+    "map_deepen": ("depth", "min_depth"),
     "node_expand": ("papers", "node_path", "node", "existing_children"),
     "node_reground": ("papers", "node_path", "node"),
     "chat": ("papers", "context"),

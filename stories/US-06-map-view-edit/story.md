@@ -9,6 +9,7 @@ As a reader, I want to navigate and edit the map freely and let the AI go deeper
 - **AT-06.4** Given an edited node, when I re-ground it then its quotes are replaced by verified quotes for its new meaning — Levels: integration
 - **AT-06.5** Given a map, I can pan, zoom (wheel/pinch), fit, collapse/expand branches and show depth 1..N — Levels: unit, system
 - **AT-06.6** Given a map, I can rename and delete it — Levels: integration
+- **AT-06.7** Given I add a node or change a node's title/explanation, then its evidence is re-derived by the AI automatically (opt-out per action); collapsing, moving or re-kinding does not trigger it — Levels: unit, integration, system
 
 ## Main files
 - `backend/app/api/maps.py`

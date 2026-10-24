@@ -1,7 +1,7 @@
 // US-07 — workspace orchestrator: map ↔ paper traceability, layers, uploads, responsive panes (US-12).
 import { api, confirmDialog, dialog, errorToast, h, toast, waitJob } from './api.js';
 import { overlappingQuotes } from './geometry.mjs';
-import { layoutMode } from './layout.mjs';
+import { defaultLayout, dragSplitter, foldFlags, gridFor, layoutMode, resetSplitter, sanitizeLayout } from './layout.mjs';
 import { MindMap } from './mindmap.js';
 import { ANN_COLORS, colorDots, PdfView } from './pdfview.js';
 import { ChatPanel, NodePanel, NotesPanel } from './panels.js';
@@ -21,14 +21,14 @@ export class Workspace {
   }
 
   async init() {
-    [this.config, this.session, this.chatQuotes] = await Promise.all([
-      api('/config'), api(`/sessions/${this.sid}`), api(`/sessions/${this.sid}/quotes`)]);
+    [this.config, this.session, this.chatQuotes, this.prefs] = await Promise.all([
+      api('/config'), api(`/sessions/${this.sid}`), api(`/sessions/${this.sid}/quotes`), api('/prefs')]);
     this.root.innerHTML = this._skeleton();
     this.$('.ws').style.setProperty('--chat', this.config.chat_color);
     this.mm = new MindMap(this.$('.mm-host'), {
       onSelect: (id, add) => this.selectNodes(id ? (add ? toggleIn(this.selected, id) : [id]) : []),
-      onToggle: (id, collapsed) => this.patchNode(id, { collapsed }),
-      onUnfold: (id) => this.patchNode(id, { collapsed: false }, { reload: false }),
+      onToggle: (id, collapsed) => this.toggleFold(id, collapsed),
+      onUnfold: (id) => this._persistFold(() => api(`/nodes/${id}`, { method: 'PATCH', body: { collapsed: false } })),
       onOpen: (id) => { this.selectNodes([id]); this.showSide('node'); this.nodePanel.edit(); },
       onKey: (action, id) => this.nodePanel.keyAction(action, id),
     });
@@ -64,6 +64,7 @@ export class Workspace {
           <select class="map-select" aria-label="Mind map"></select>
           <button class="btn" data-act="new-map">＋ Map</button>
           <label class="btn">＋ Paper<input type="file" accept="application/pdf,.pdf" multiple hidden data-upload></label>
+          <button class="btn ghost icon layout-btn" data-act="layout" aria-label="Layout" title="Layout">▦</button>
           <button class="btn ghost icon side-toggle" data-act="toggle-side" aria-label="Side panel">☰</button>
         </div>
       </header>
@@ -80,7 +81,7 @@ export class Workspace {
           <div class="map-status"></div>
           <div class="node-chip" hidden></div>
         </section>
-        <div class="split" data-split="a"></div>
+        <div class="split" data-split="sa" title="Drag to resize · double-click to reset"></div>
         <section class="pane pane-paper" data-pane="paper">
           <div class="pane-bar">
             <select class="paper-select" aria-label="Paper"></select>
@@ -96,7 +97,7 @@ export class Workspace {
           </div>
           <div class="pdf-host"></div>
         </section>
-        <div class="split" data-split="b"></div>
+        <div class="split" data-split="sb" title="Drag to resize · double-click to reset"></div>
         <aside class="pane pane-side" data-pane="side">
           <div class="tabs" role="tablist">
             <button data-side="node" class="on">Node</button><button data-side="notes">Notes</button><button data-side="chat">Chat</button>
@@ -119,13 +120,78 @@ export class Workspace {
   _applyMode() {
     const ws = this.$('.ws');
     const mode = layoutMode(window.innerWidth);
+    const changed = ws.dataset.mode !== mode;
     ws.dataset.mode = mode;
     if (!ws.dataset.tab) ws.dataset.tab = 'map';
-    const cols = JSON.parse(localStorage.getItem('pr.cols') || 'null');
-    if (mode === 'desktop' && cols) {
-      ws.style.setProperty('--col-map', `${cols.map}fr`);
-      ws.style.setProperty('--col-side', `${cols.side}px`);
+    if (changed || !this.layout) this.layout = mode === 'phone' ? null : sanitizeLayout(this.prefs?.[`layout.${mode}`], mode);
+    this._applyLayout();
+    if (changed && this.mm) requestAnimationFrame(() => this.mm.fit());
+  }
+
+  // ---- US-13 user layout ---------------------------------------------------------------------
+  _applyLayout() {
+    const ws = this.$('.ws');
+    const main = this.$('.ws-main');
+    if (!this.layout) {
+      ws.dataset.layout = 'tabs';
+      main.style.gridTemplateAreas = main.style.gridTemplateColumns = main.style.gridTemplateRows = '';
+      return;
     }
+    const g = gridFor(this.layout);
+    if (this.layout.side === 'drawer' && ws.dataset.layout !== 'drawer') ws.classList.remove('side-open');
+    ws.dataset.layout = this.layout.side;
+    main.style.gridTemplateAreas = g.areas;
+    main.style.gridTemplateColumns = g.columns;
+    main.style.gridTemplateRows = g.rows;
+  }
+
+  async _saveLayout() {
+    const key = `layout.${this.$('.ws').dataset.mode}`;
+    this.prefs = { ...this.prefs, [key]: this.layout };
+    try { await api(`/prefs/${key}`, { method: 'PUT', body: this.layout }); } catch (e) { errorToast(e); }
+  }
+
+  _afterLayout() {
+    this._applyLayout();
+    requestAnimationFrame(() => this.mm.fit());
+  }
+
+  setLayout(patch) {
+    this.layout = { ...this.layout, ...patch };
+    this._afterLayout();
+    this._saveLayout();
+  }
+
+  async resetLayout() {
+    const mode = this.$('.ws').dataset.mode;
+    this.layout = defaultLayout(mode);
+    delete this.prefs[`layout.${mode}`];
+    this._afterLayout();
+    try { await api(`/prefs/layout.${mode}`, { method: 'DELETE' }); } catch (e) { errorToast(e); }
+  }
+
+  layoutMenu(anchor) {
+    const pop = this.$('.popover');
+    const tablet = this.$('.ws').dataset.mode === 'tablet';
+    const pos = [['right', 'Right'], ['left', 'Left'], ['bottom', 'Bottom (footer)'], ...(tablet ? [['drawer', 'Drawer']] : [])];
+    pop.innerHTML = `<div class="layout-menu"><b>Notes · Chat · Node panel</b>
+      <div class="seg wrap">${pos.map(([v, l]) => `<button data-lay-side="${v}" class="${this.layout.side === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <button class="pop-row" data-lay="swap">⇄ Swap map and paper</button>
+      <button class="pop-row" data-lay="reset">↺ Reset layout</button>
+      <p class="muted small">Drag the dividers to resize; double-click a divider to reset it.</p></div>`;
+    pop.hidden = false;
+    const r = anchor.getBoundingClientRect();
+    Object.assign(pop.style, { left: `${Math.max(8, Math.min(window.innerWidth - 300, r.right - 290))}px`, top: `${r.bottom + 6}px` });
+    pop.onclick = (e) => {
+      const b = e.target.closest('[data-lay-side],[data-lay]');
+      if (!b) return;
+      if (b.dataset.laySide) this.setLayout({ side: b.dataset.laySide });
+      else if (b.dataset.lay === 'swap') this.setLayout({ swap: !this.layout.swap });
+      else this.resetLayout();
+      pop.hidden = true;
+    };
+    const away = (e) => { if (!pop.contains(e.target) && e.target !== anchor) { pop.hidden = true; document.removeEventListener('pointerdown', away, true); } };
+    setTimeout(() => document.addEventListener('pointerdown', away, true), 0);
   }
 
   showTab(tab) {
@@ -159,6 +225,7 @@ export class Workspace {
         'rename-session': () => this.renameSession(),
         'new-map': () => this.newMap(),
         'toggle-side': () => ws.classList.toggle('side-open'),
+        layout: () => this.layoutMenu(b),
         'zoom-in': () => this.mm.zoom(1.25), 'zoom-out': () => this.mm.zoom(0.8), fit: () => this.mm.fit(),
         'pdf-zoom-in': () => this.pdf.setZoom(this.pdf.zoomFactor * 1.2), 'pdf-zoom-out': () => this.pdf.setZoom(this.pdf.zoomFactor / 1.2),
         'paper-menu': () => this.paperMenu(),
@@ -175,28 +242,31 @@ export class Workspace {
     for (const b of this.root.querySelectorAll('[data-layer]')) b.classList.toggle('on', !!this.layers[b.dataset.layer]);
   }
 
+  /** AT-13.1 — drag a divider (mouse, pen or finger); AT-13.4 — double-click resets it. */
   _bindSplit(el) {
+    const which = el.dataset.split;
     el.addEventListener('pointerdown', (e) => {
-      const main = this.$('.ws-main').getBoundingClientRect();
+      if (!this.layout) return;
+      e.preventDefault();
       el.setPointerCapture(e.pointerId);
-      const move = (ev) => {
-        const ws = this.$('.ws');
-        if (el.dataset.split === 'a') {
-          const side = this.$('.pane-side').offsetWidth;
-          const rest = main.width - side;
-          const mapW = Math.max(200, Math.min(rest - 260, ev.clientX - main.left));
-          ws.style.setProperty('--col-map', `${mapW / (rest - mapW)}fr`);
-        } else {
-          ws.style.setProperty('--col-side', `${Math.max(260, Math.min(640, main.right - ev.clientX))}px`);
-        }
-      };
+      el.classList.add('dragging');
+      const main = this.$('.ws-main').getBoundingClientRect();
+      const a = this.$('.pane-map').getBoundingClientRect(), b = this.$('.pane-paper').getBoundingClientRect();
+      const panes = { left: Math.min(a.left, b.left), width: Math.max(a.right, b.right) - Math.min(a.left, b.left) };
+      const move = (ev) => { this.layout = dragSplitter(this.layout, which, { x: ev.clientX, y: ev.clientY }, panes, main); this._applyLayout(); };
       const up = () => {
-        el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up);
-        const st = this.$('.ws').style;
-        localStorage.setItem('pr.cols', JSON.stringify({ map: parseFloat(st.getPropertyValue('--col-map')) || 1, side: parseFloat(st.getPropertyValue('--col-side')) || 360 }));
+        el.classList.remove('dragging');
+        el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
         this.mm.fit();
+        this._saveLayout();
       };
-      el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
+      el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    });
+    el.addEventListener('dblclick', () => {
+      if (!this.layout) return;
+      this.layout = resetSplitter(this.layout, which, this.$('.ws').dataset.mode);
+      this._afterLayout();
+      this._saveLayout();
     });
   }
 
@@ -317,7 +387,11 @@ export class Workspace {
 
   async loadMap(mapId, opts = {}) {
     if (!mapId) { this.map = null; this.mm.setMap({ nodes: [], links: [], quotes: [] }); this.renderMapEmpty(); this.refreshOverlays(); this.nodePanel.render(); return; }
-    try { this.map = await api(`/maps/${mapId}`); } catch (e) { return errorToast(e); }
+    const seq = this._mapSeq = (this._mapSeq || 0) + 1;
+    let map;
+    try { map = await api(`/maps/${mapId}`); } catch (e) { return errorToast(e); }
+    if (seq !== this._mapSeq) return; // a newer load or local change won the race
+    this.map = map;
     this.$('.map-select').value = mapId;
     this.$('.map-status').innerHTML = this.map.status === 'failed'
       ? `<div class="empty error">Generation failed: ${esc(this.map.error || '')}<br>Delete this map and try again (maybe another model in Admin).</div>`
@@ -344,17 +418,39 @@ export class Workspace {
 
   /** AT-06.5 — show the map down to a depth (persisted as fold state). */
   async fold(depth) {
-    try {
-      await api(`/maps/${this.map.id}/fold`, { method: 'POST', body: { depth: depth === 'all' ? null : Number(depth) } });
-      await this.loadMap(this.map.id);
-    } catch (e) { errorToast(e); }
+    const d = depth === 'all' ? null : Number(depth);
+    const flags = foldFlags(this.map.nodes, d);
+    for (const n of this.map.nodes) n.collapsed = flags.get(n.id) ? 1 : 0;
+    this._mapSeq = (this._mapSeq || 0) + 1; // responses already in flight are now stale
+    this.mm.setMap(this.map);
+    await this._persistFold(() => api(`/maps/${this.map.id}/fold`, { method: 'POST', body: { depth: d } }));
+  }
+
+  /** Fold writes are queued so the server applies them in the order the user made them. */
+  _persistFold(write) {
+    this._foldQueue = (this._foldQueue || Promise.resolve()).then(write).catch(async (e) => {
+      errorToast(e);
+      await this.loadMap(this.map.id, { keepView: true });
+    });
+    return this._foldQueue;
+  }
+
+  /** Fold/unfold one branch: instant on screen, persisted in the background. */
+  async toggleFold(id, collapsed) {
+    const n = this.mm.byId.get(id);
+    if (!n) return;
+    n.collapsed = collapsed ? 1 : 0;
+    this._mapSeq = (this._mapSeq || 0) + 1;
+    this.mm.render();
+    await this._persistFold(() => api(`/nodes/${id}`, { method: 'PATCH', body: { collapsed } }));
   }
 
   async patchNode(id, body, { reload = true } = {}) {
     try {
-      await api(`/nodes/${id}`, { method: 'PATCH', body });
+      const res = await api(`/nodes/${id}`, { method: 'PATCH', body });
       if (reload) await this.loadMap(this.map.id, { keepView: true });
-    } catch (e) { errorToast(e); }
+      return res;
+    } catch (e) { errorToast(e); return null; }
   }
 
   // ---- traceability (US-07) ----------------------------------------------------------------

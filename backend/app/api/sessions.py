@@ -97,7 +97,8 @@ def upload_papers(sid: str, request: Request, files: list[UploadFile] = File(...
         except pdf.NotAPDF as exc:
             raise HTTPException(400, f"{f.filename}: {exc}") from exc
         paper = repo.insert("papers", session_id=sid, filename=f.filename,
-                            title=default_paper_title(extracted["meta_title"], f.filename or "paper.pdf"),
+                            title=default_paper_title(extracted["meta_title"], f.filename or "paper.pdf",
+                                                      extracted.get("heading")),
                             page_count=len(extracted["pages"]), created_at=now())
         with open(paper_path(request, paper["id"]), "wb") as out:
             out.write(data)

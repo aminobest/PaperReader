@@ -183,8 +183,9 @@ def get_chat(cid: str, user=Depends(current_user), repo=Depends(get_repo)):
     owned(repo, "chats", cid, user)
     chat = repo.get("chats", cid)
     chat["messages"] = repo.query("SELECT * FROM messages WHERE chat_id=? ORDER BY created_at, rowid", (cid,))
-    chat["quotes"] = repo.query("SELECT q.* FROM quotes q JOIN messages m ON m.id=q.message_id WHERE m.chat_id=?",
-                                (cid,))
+    chat["quotes"] = repo.query(
+        "SELECT q.id, q.origin, q.node_id, q.message_id, q.paper_id, q.page, q.text, q.rects, q.created_at "
+        "FROM quotes q JOIN messages m ON m.id=q.message_id WHERE m.chat_id=?", (cid,))
     return chat
 
 
@@ -198,6 +199,23 @@ def rename_chat(cid: str, body: ChatPatch, user=Depends(current_user), repo=Depe
 def delete_chat(cid: str, user=Depends(current_user), repo=Depends(get_repo)):
     owned(repo, "chats", cid, user)
     repo.delete("chats", cid)
+
+
+@router.delete("/messages/{mid}", status_code=204)
+def delete_message(mid: str, user=Depends(current_user), repo=Depends(get_repo)):
+    """AT-10.5 — delete a message (a question also removes the answer that follows it); quotes cascade."""
+    msg = repo.get("messages", mid)
+    if not msg:
+        raise HTTPException(404, "message not found")
+    owned(repo, "chats", msg["chat_id"], user)
+    ids = [mid]
+    if msg["role"] == "user":
+        nxt = repo.query("SELECT id, role FROM messages WHERE chat_id=? AND rowid > (SELECT rowid FROM messages WHERE id=?)"
+                         " ORDER BY rowid LIMIT 1", (msg["chat_id"], mid))
+        if nxt and nxt[0]["role"] == "assistant":
+            ids.append(nxt[0]["id"])
+    for i in ids:
+        repo.delete("messages", i)
 
 
 @router.post("/chats/{cid}/messages", status_code=202)
@@ -217,5 +235,6 @@ def session_chat_quotes(sid: str, user=Depends(current_user), repo=Depends(get_r
     """US-07 — all chat quotes of a session (the always-visible AI-trace layer)."""
     owned(repo, "sessions", sid, user)
     return repo.query(
-        "SELECT q.*, m.chat_id FROM quotes q JOIN messages m ON m.id=q.message_id JOIN chats c ON c.id=m.chat_id "
+        "SELECT q.id, q.origin, q.node_id, q.message_id, q.paper_id, q.page, q.text, q.rects, q.created_at, m.chat_id "
+        "FROM quotes q JOIN messages m ON m.id=q.message_id JOIN chats c ON c.id=m.chat_id "
         "WHERE c.session_id=?", (sid,))

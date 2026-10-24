@@ -8,6 +8,8 @@ AI-built mind map that is **always traceable to verbatim quotes in the PDF**.
   (accounts seeded from `data/users.json`, same accounts/hashes as plansTracker). Roles: `user`, `admin`.
 - R2 Works well on Mac (desktop browser), iPad (split panes, touch, pinch) and iPhone (tabbed
   single pane). Installable to home screen.
+- R2b Workspace layout is adjustable: resize the three areas, put the side panel right/left/bottom
+  (or drawer on tablet), swap map and paper; remembered per user and device class.
 
 ## Core domain
 - R3 **Sessions** (CRUD): a named workspace holding one or more papers, their maps, notes, chats.
@@ -17,11 +19,15 @@ AI-built mind map that is **always traceable to verbatim quotes in the PDF**.
   need" branch with plain-language explanations; nodes carry a short title (keyword), a
   plain-language explanation, a kind, and supporting quotes; cross-links between nodes
   (knowledge-graph relations). Users can add/edit/delete/move nodes and links, expand a node
-  deeper with AI, re-ground a node's quotes with AI, and control the visible depth.
+  deeper with AI, re-ground a node's quotes with AI, and control the visible depth. Adding a node or
+  changing what it says re-derives its evidence automatically (opt-out).
 - R6 **Grounding assertion**: every quote produced by the LLM (map, expand, re-ground, chat) is
   verified to exist verbatim (whitespace/hyphenation/ligature-insensitive) in the paper and is
-  located (page + rectangles). Failed quotes are sent back to the LLM for correction, up to N
-  retries (admin setting); still-failing quotes are dropped and reported, never shown.
+  located (page + rectangles). Evidence should be a complete, contextual passage directly
+  supporting the map item or answer claim. The model chooses how many passages are needed; the
+  application does not impose a quote-count target or cap. Failed quotes are sent back to the LLM
+  for correction, up to N retries (admin setting); still-failing quotes are dropped and reported,
+  never shown. The application does not impose a word-count limit.
 - R7 **Bidirectional traceability**: selecting a node highlights all its quotes in the paper and
   jumps to the first; selecting text / tapping a highlight in the paper highlights every related
   node in the map. The paper always shows what is relevant (map quotes, chat quotes, annotations,
@@ -29,7 +35,7 @@ AI-built mind map that is **always traceable to verbatim quotes in the PDF**.
 - R8 **Annotations** (CRUD): Acrobat-like highlights in 6 colors with an optional comment.
 - R9 **Notes** (CRUD): persistent per-session notes, optionally linked to a node, autosaved.
 - R10 **Chat** (CRUD threads): ask the LLM about selected node(s) or a selected passage; answers
-  cite grounded quotes, highlighted in the paper in the dedicated AI-trace color.
+  cite grounded quotes, highlighted in the paper in the dedicated AI-trace color. Messages can be deleted.
 
 ## Admin (`/admin`, admin role)
 - R11 Model name (free text; presets: `anthropic/claude-opus-5.5`, `openai/gpt-6-luna`,
@@ -38,6 +44,7 @@ AI-built mind map that is **always traceable to verbatim quotes in the PDF**.
 - R13 AI call log (prompt, response, model, duration, error) viewable and clearable.
 
 ## Non-functional
+- R14b An on-demand journey test runs the whole workflow on a real arXiv paper with the real LLM.
 - R14 Engineering: story-first (`stories/`), each story has ATs covered at unit/integration/system
   level and a logbook; `scripts/ci.sh` gate (lint, architecture, traceability, tests) runs
   automatically via git hooks. Lint/arch/traceability/unit/integration spend **no tokens**

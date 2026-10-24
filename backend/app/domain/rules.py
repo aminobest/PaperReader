@@ -22,11 +22,14 @@ def clean_name(name: str, what: str = "name", max_len: int = 120) -> str:
     return name[:max_len]
 
 
-def default_paper_title(meta_title: str | None, filename: str) -> str:
-    """US-03 AT-03.5 — metadata title if meaningful, else filename without extension."""
+def default_paper_title(meta_title: str | None, filename: str, heading: str | None = None) -> str:
+    """US-03 AT-03.5 — metadata title if meaningful, else the page-1 heading, else filename without extension."""
     meta_title = (meta_title or "").strip()
     if len(meta_title) >= 4 and not meta_title.lower().endswith((".pdf", ".dvi", ".doc", ".tex")):
         return meta_title[:200]
+    heading = " ".join((heading or "").split())
+    if len(heading) >= 8 and any(ch.isalpha() for ch in heading):
+        return heading[:200]
     stem = os.path.splitext(os.path.basename(filename or "paper.pdf"))[0]
     return (stem.replace("_", " ").strip() or "Untitled paper")[:200]
 
@@ -92,3 +95,17 @@ def link_citations(answer: str, kept: dict[int, str]) -> str:
         n = int(m.group(1))
         return f"[[q:{kept[n]}|{n}]]" if n in kept else ""
     return _CITE.sub(sub, answer)
+
+
+PREF_KEYS = ("layout.desktop", "layout.tablet")  # US-13: layout is remembered per device class
+MAX_PREF_BYTES = 2048
+
+
+def validate_pref(key: str, value_json: str) -> None:
+    """US-13 AT-13.6 — only known keys; small JSON objects (the client sanitises the content)."""
+    if key not in PREF_KEYS:
+        raise ValidationError(f"unknown preference {key!r}")
+    if len(value_json.encode()) > MAX_PREF_BYTES:
+        raise ValidationError("preference too large")
+    if not value_json.startswith("{"):
+        raise ValidationError("preference must be an object")

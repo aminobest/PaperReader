@@ -12,7 +12,7 @@ from app.application import map_service
 from app.application.map_service import load_papers
 from app.domain.grounding import QuoteError, locate
 from app.domain.ids import now
-from app.domain.mindmap import KINDS, would_create_cycle
+from app.domain.mindmap import KINDS, meaning_changed, would_create_cycle
 from app.domain.rules import ValidationError, clean_name
 
 router = APIRouter(prefix="/api", tags=["maps"])
@@ -33,6 +33,7 @@ class NodeIn(BaseModel):
     title: str
     explanation: str = ""
     kind: str = "detail"
+    ground: bool = True  # AT-06.7: find evidence with the AI right away (opt-out)
 
 
 class NodePatch(BaseModel):
@@ -42,6 +43,7 @@ class NodePatch(BaseModel):
     parent_id: Optional[str] = None
     position: Optional[int] = None
     collapsed: Optional[bool] = None
+    reground: Optional[bool] = None  # AT-06.7: None = automatic when the meaning changed
 
 
 class FoldIn(BaseModel):
@@ -135,21 +137,29 @@ def fold_map(mid: str, body: FoldIn, user=Depends(current_user), repo=Depends(ge
     return repo.map_full(mid)
 
 
+def _reground_job(request: Request, user, sid: str, nid: str, repo) -> dict:
+    gw = _gateway(request)
+    return _start(request, user, sid, "node_reground", nid, lambda: map_service.reground_node(repo, gw, nid))
+
+
 @router.post("/maps/{mid}/nodes", status_code=201)
-def add_node(mid: str, body: NodeIn, user=Depends(current_user), repo=Depends(get_repo)):
-    owned(repo, "maps", mid, user)
+async def add_node(mid: str, body: NodeIn, request: Request, user=Depends(current_user), repo=Depends(get_repo)):
+    """AT-06.1 add · AT-06.7 the new node's evidence is derived by the AI unless ground=false."""
+    sid = owned(repo, "maps", mid, user)
     parent = repo.get("nodes", body.parent_id)
     if not parent or parent["map_id"] != mid:
         raise HTTPException(422, "parent must be a node of this map")
-    return repo.insert("nodes", map_id=mid, parent_id=body.parent_id, title=_clean(body.title, "title"),
+    node = repo.insert("nodes", map_id=mid, parent_id=body.parent_id, title=_clean(body.title, "title"),
                        explanation=body.explanation.strip(), kind=_kind(body.kind),
                        position=repo.next_position(mid, body.parent_id), created_at=now(), updated_at=now())
+    return {**node, "job": _reground_job(request, user, sid, node["id"], repo) if body.ground else None}
 
 
 @router.patch("/nodes/{nid}")
-def edit_node(nid: str, body: NodePatch, user=Depends(current_user), repo=Depends(get_repo)):
-    """AT-06.1 — edit fields, move (no cycles), reorder, collapse."""
-    owned(repo, "nodes", nid, user)
+async def edit_node(nid: str, body: NodePatch, request: Request, user=Depends(current_user), repo=Depends(get_repo)):
+    """AT-06.1 — edit fields, move (no cycles), reorder, collapse.
+    AT-06.7 — when title/explanation change, the evidence is re-derived (unless reground=false)."""
+    sid = owned(repo, "nodes", nid, user)
     node = repo.get("nodes", nid)
     cols: dict = {}
     if body.title is not None:
@@ -175,7 +185,9 @@ def edit_node(nid: str, body: NodePatch, user=Depends(current_user), repo=Depend
     if body.position is not None:
         cols["position"] = body.position
     cols["updated_at"] = now()
-    return repo.update("nodes", nid, **cols)
+    auto = meaning_changed(node, cols) if body.reground is None else body.reground
+    updated = repo.update("nodes", nid, **cols)
+    return {**updated, "job": _reground_job(request, user, sid, nid, repo) if auto else None}
 
 
 @router.delete("/nodes/{nid}", status_code=204)

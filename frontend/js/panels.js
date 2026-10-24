@@ -127,7 +127,7 @@ export class NodePanel {
       <label>Kind<select name="kind">${ws.config.kinds.map((k) => `<option ${k === n.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
       <label>Explanation<textarea name="explanation" rows="6">${esc(n.explanation)}</textarea></label>
       ${n.parent_id ? `<label>Parent (move)<select name="parent_id">${parents.map((p) => `<option value="${p.id}" ${p.id === n.parent_id ? 'selected' : ''}>${esc(this.path(p).map((x) => x.title).join(' › '))}</option>`).join('')}</select></label>` : ''}
-      <label class="check"><input type="checkbox" name="reground"> Re-find evidence with AI after saving</label>
+      <label class="check"><input type="checkbox" name="reground" checked> Re-derive the evidence with AI if the title or explanation changed</label>
       <div class="actions"><button type="button" class="btn ghost" data-cancel>Cancel</button><button class="btn primary">Save</button></div></form>`;
     const form = this.el.querySelector('form');
     form.querySelector('[data-cancel]').onclick = () => this.render();
@@ -136,20 +136,23 @@ export class NodePanel {
       const f = form.elements;
       const body = { title: f.title.value, kind: f.kind.value, explanation: f.explanation.value };
       if (f.parent_id) body.parent_id = f.parent_id.value;
-      await ws.patchNode(n.id, body);
-      if (f.reground.checked) await this.runJob(n, 'reground', 'Finding evidence…');
+      if (!f.reground.checked) body.reground = false;
+      const res = await ws.patchNode(n.id, body);
+      if (res?.job) await this.trackJob(n, res.job, 'reground', 'Finding evidence…');
     };
     form.elements.title.focus();
   }
 
   async addNode(parentId) {
-    const v = await dialog({ title: 'New node', fields: [{ name: 'title', label: 'Title' }, { name: 'explanation', type: 'textarea', label: 'Explanation (optional)', rows: 3 }] });
+    const v = await dialog({ title: 'New node', fields: [{ name: 'title', label: 'Title' }, { name: 'explanation', type: 'textarea', label: 'Explanation (optional)', rows: 3 },
+      { name: 'ground', type: 'checkbox', label: 'Find its evidence in the paper with AI', value: true }] });
     if (!v) return;
     const node = await api(`/maps/${this.ws.map.id}/nodes`, { method: 'POST', body: { parent_id: parentId, ...v } });
     const parent = this.ws.mm.byId.get(parentId);
     if (parent?.collapsed) await api(`/nodes/${parentId}`, { method: 'PATCH', body: { collapsed: false } });
     await this.ws.loadMap(this.ws.map.id, { keepView: true });
     this.ws.selectNodes([node.id], { jump: false });
+    if (node.job) await this.trackJob(node, node.job, 'reground', 'Finding evidence…');
   }
 
   async remove(n) {
@@ -173,6 +176,10 @@ export class NodePanel {
 
   async runJob(n, kind, label) {
     const job = await api(`/nodes/${n.id}/${kind}`, { method: 'POST' });
+    await this.trackJob(n, job, kind, label);
+  }
+
+  async trackJob(n, job, kind, label) {
     this.busy.set(n.id, label);
     if (this.node?.id === n.id) this.render();
     try {
@@ -338,9 +345,10 @@ export class ChatPanel {
   }
 
   _msg(m) {
-    if (m.role === 'user') return `<div class="msg user">${esc(m.content)}</div>`;
+    const del = m.id ? `<button class="x msg-del" data-del-msg="${m.id}" aria-label="Delete message" title="Delete">×</button>` : '';
+    if (m.role === 'user') return `<div class="msg user">${del}${esc(m.content)}</div>`;
     const r = m.report || {};
-    return `<div class="msg assistant">${renderMarkdown(m.content)}${r.quotes_dropped ? `<div class="muted small">${r.quotes_dropped} citation(s) could not be verified in the paper and were removed.</div>` : ''}</div>`;
+    return `<div class="msg assistant">${del}${renderMarkdown(m.content)}${r.quotes_dropped ? `<div class="muted small">${r.quotes_dropped} citation(s) could not be verified in the paper and were removed.</div>` : ''}</div>`;
   }
 
   async send(text) {
@@ -360,9 +368,18 @@ export class ChatPanel {
   }
 
   async _click(e) {
-    const t = e.target.closest('[data-c],[data-open],[data-del],[data-rename],.cite');
+    const t = e.target.closest('[data-c],[data-open],[data-del],[data-rename],[data-del-msg],.cite');
     if (!t) return;
     try {
+      if (t.dataset.delMsg) {
+        const m = this.chat.messages.find((x) => x.id === t.dataset.delMsg);
+        const msg = m.role === 'user' ? 'This question and its answer will be deleted.' : 'This answer and its highlighted evidence will be deleted.';
+        if (!(await confirmDialog('Delete message?', msg))) return;
+        await api(`/messages/${m.id}`, { method: 'DELETE' });
+        await this.open(this.chat.id);
+        await this.ws.refreshChatQuotes();
+        return;
+      }
       if (t.classList.contains('cite')) {
         const q = this.chat.quotes.find((x) => x.id === t.dataset.quote);
         if (q) { await this.ws.goToQuote(q); if (window.innerWidth < 700) this.ws.showTab('paper'); }

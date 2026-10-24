@@ -13,7 +13,7 @@ test.beforeAll(async ({ browser }) => {
 });
 test.afterAll(async () => { await page.close(); });
 
-test('AT-05.3 generate a mind map with the AI for a paper', async () => {
+test('AT-05.3 AT-14.1 AT-14.2 AT-14.3 generate contextual, explained evidence with the map', async () => {
   await page.click('[data-act=new-map]');
   await page.click('.modal button[type=submit]');
   await expect(page.locator('.map-status .busy')).toBeVisible();
@@ -22,6 +22,20 @@ test('AT-05.3 generate a mind map with the AI for a paper', async () => {
   expect(await page.locator('.mm-node').count()).toBeGreaterThan(4);
   await page.click('[data-depth=all]');
   await expect(page.locator('.mm-badge').first()).toBeVisible();
+  const evidence = await page.evaluate(async () => {
+    const sid = location.hash.match(/^#\/s\/(\w+)/)?.[1];
+    const session = await fetch(`/api/sessions/${sid}`).then((r) => r.json());
+    const map = await fetch(`/api/maps/${session.maps.at(-1).id}`).then((r) => r.json());
+    return map.quotes;
+  });
+  expect(evidence.length).toBeGreaterThan(0);
+  for (const q of evidence) expect(q.text.trim().length).toBeGreaterThan(0);
+  const logs = await page.request.get('/api/admin/logs?limit=50').then((r) => r.json());
+  const generation = logs.find((l) => l.kind === 'map_generate');
+  const quotePrompt = generation.messages[1].content;
+  expect(quotePrompt).toContain('no fixed target or maximum');
+  expect(quotePrompt.toLowerCase()).toContain('not keyword matching');
+  expect(quotePrompt).not.toContain('1-2 non-redundant passages');
 });
 
 test('AT-04.5 every map-quote highlight lies on real text of the paper', async () => {
@@ -97,6 +111,17 @@ test('AT-06.3 "Go deeper" asks the AI and appends grounded child nodes', async (
   await expect.poll(() => page.locator('.mm-node').count()).toBeGreaterThan(before);
 });
 
+test('AT-06.7 a new node gets its evidence from the AI automatically', async () => {
+  await page.locator('.mm-node.d0').click();
+  await page.click('[data-a=child]');
+  await page.fill('.modal input[name=title]', 'Accuracy on TREC');
+  await page.fill('.modal textarea[name=explanation]', 'GMN reaches 88.4 percent on the TREC question dataset.');
+  await page.click('.modal button[type=submit]');
+  await expect(page.locator('.toast.ok', { hasText: 'verified quotes' })).toBeVisible({ timeout: 4 * 60 * 1000 });
+  await expect(page.locator('.mm-node', { hasText: 'Accuracy on TREC' }).locator('.mm-badge')).toBeVisible();
+  await expect(page.locator('.quote').first()).toContainText('88.4');
+});
+
 test('AT-10.1 chat about a node; AT-10.3 answer quotes shown in the AI-trace color, citations jump to them', async () => {
   await page.locator('.mm-node.d1').first().click();
   await page.click('[data-a=chat]');
@@ -111,6 +136,14 @@ test('AT-10.1 chat about a node; AT-10.3 answer quotes shown in the AI-trace col
   await expect(chatHl).toBeInViewport({ timeout: 5000 });
   const color = await page.evaluate(() => fetch('/api/config').then((r) => r.json()).then((c) => c.chat_color));
   expect(await chatHl.evaluate((e) => e.style.getPropertyValue('--hc'))).toBe(color);
+});
+
+test('AT-10.5 deleting a message removes its evidence from the paper', async () => {
+  await expect(page.locator('.hl-chat').first()).toBeAttached();
+  await page.locator('.msg.user .msg-del').first().click({ force: true });
+  await page.click('.modal button[type=submit]');
+  await expect(page.locator('.msg')).toHaveCount(0);
+  await expect(page.locator('.hl-chat')).toHaveCount(0);
   await page.click('[data-c=back]');
   await expect(page.locator('.chat-item')).toHaveCount(1);
 });
