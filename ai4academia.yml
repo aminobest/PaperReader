@@ -1,0 +1,14 @@
+# ai4academia.yml — suggested by AI4Academia from your Dockerfile, README and .env.example.
+# Check every value, pick a category, then commit this file at the repository root.
+schema: 1
+name: PaperReader
+summary: Understand research papers fast, even without the background.
+category: other
+tags: []
+run:
+  dockerfile: Dockerfile
+  port: 8000
+  health: /api/health
+  data: /data
+env: []
+services: []

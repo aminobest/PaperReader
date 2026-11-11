@@ -1,0 +1,53 @@
+# devflow.yml — project profile for the story-driven-dev skill.
+# Copy to the repo root and adapt every path and command to the project.
+
+requirements: docs/requirements.md
+stories: stories/                 # one folder per story + README.md index
+issues: issues/                   # issue reports land here; committed to git
+
+levels:                           # fastest to slowest; ATs list these in `Levels:`
+  unit:
+    paths: [tests/unit]
+    run: pytest tests/unit
+  integration:
+    paths: [tests/integration]
+    run: pytest tests/integration   # needs the DB: run inside the dev container
+  system:
+    paths: [tests/system]
+    run: npx playwright test        # against app:<git-sha> via compose.test.yaml; external services faked
+  live:
+    paths: [tests/live]
+    run: pytest tests/live          # real LLM/services, tiny fixture; costs tokens
+    enabled: true                   # false = skipped by the full gate (still traced)
+
+gate:
+  fast: scripts/ci.sh --fast      # pre-commit; token-free
+  full: scripts/ci.sh             # pre-push (remote CI: --no-live)
+
+docker:
+  compose: compose.yaml
+  test_compose: compose.test.yaml
+  app_service: app
+  image: app                      # full gate builds app:<git-sha>
+  healthcheck: http://localhost:8000/health
+
+deploy: APP_TAG=$(git rev-parse --short HEAD) docker compose up -d --no-build   # optional; only when asked; runs the gate-tested app:<git-sha>
+
+architecture:
+  presentation: src/presentation
+  logic: src/logic
+  data: src/data
+  models: src/models
+  main: src/main.py
+  config: .importlinter           # single source of layer rules, forbidden libs, baseline
+  models_validation: pydantic     # the one non-stdlib library models may use
+
+admin:                            # UI projects only; SEED defaults — runtime values live in app storage
+  path: /admin
+  issue_reporter: true
+  who_can_report: signed_in       # signed_in | admins
+
+invariants:                       # project rules in plain language
+  - All LLM calls go through data/llm_gateway.
+  - Prompt text lives only in logic/prompts.
+  - Every quote shown to the user is verified by logic/grounding.
