@@ -1,0 +1,33 @@
+# devflow.yml — project profile for the story-driven-dev skill (PaperReader).
+# Added by AI4Academia's conversion: check the commands, they are a starting point.
+
+requirements: README.md
+stories: stories/                 # one folder per story + README.md index
+issues: issues/                   # issue reports land here
+
+levels:                           # fastest to slowest; ATs list these in `Levels:`
+  unit:
+    paths: [tests/unit]
+    run: echo "TODO: the command that runs tests/unit" && exit 1
+  integration:
+    paths: [tests/integration]
+    run: echo "TODO: the command that runs tests/integration" && exit 1
+  system:
+    paths: [tests/system]
+    run: echo "TODO: the command that runs tests/system" && exit 1
+
+gate:
+  fast: python3 scripts/check_traceability.py   # add lint and the unit + integration tests
+  full: python3 scripts/check_traceability.py   # add building the image and the system tests
+
+docker:
+  image: paperreader
+  healthcheck: http://127.0.0.1:8000/api/health
+
+# architecture: name your layers when the first story needs them (the skill's references/architecture.md):
+#   presentation: src/...
+#   logic: src/...
+#   data: src/...
+#   main: src/...
+
+invariants: []

@@ -1,3 +1,5 @@
+[![Listed on AI4Academia](https://ai4academia.tail32bbbc.ts.net/badge.svg)](https://ai4academia.tail32bbbc.ts.net/tools/paperreader)
+
 # PaperReader
 
 Understand research papers fast, even without the background. Upload PDFs into a session; the
